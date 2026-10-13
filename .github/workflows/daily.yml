@@ -64,8 +64,8 @@ jobs:
         run: |
           cutoff=$(date -u -d '90 days ago' +%F)
           gh release list --limit 500 --json tagName --jq '.[].tagName' | while read -r t; do
-            d=${t#day-}; [[ "$t" == day-* && "$d" < "$cutoff" ]] && gh release delete "$t" -y --cleanup-tag && echo "deleted $t"
-          done; true
+            d=${t#day-}; [[ "$t" == day-* && "$d" < "$cutoff" ]] && gh release delete "$t" -y --cleanup-tag && echo "deleted $t" || true
+          done || true
       - name: Keep-alive commit (stops GitHub disabling the schedule after 60 days)
         run: |
           echo "$(date -u +%FT%TZ) rolled up ${{ steps.d.outputs.day }}" > LAST_ROLLUP.txt
