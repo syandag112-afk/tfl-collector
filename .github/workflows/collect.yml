@@ -1,7 +1,7 @@
 name: collect
 on:
   schedule:
-    - cron: '*/1 * * * *'   # GitHub may start runs 5-20 min late at busy times
+    - cron: '*/5 * * * *'   # outer schedule (GitHub minimum); each run samples every 60 s for 5 min
   workflow_dispatch:
 concurrency:
   group: collect          # one run at a time; a queued run waits instead of colliding
@@ -12,7 +12,7 @@ permissions:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: "A: trigger the app's own history collection (poll)"
@@ -38,7 +38,15 @@ jobs:
       - name: "B: TfL snapshot for all bus routes"
         env:
           TFL_APP_KEY: ${{ secrets.TFL_APP_KEY }}
-        run: python scripts/collector.py collect
+        run: |
+          # inner loop: one reading per minute, 5 readings per run
+          for n in 1 2 3 4 5; do
+            t0=$(date +%s)
+            echo "reading $n at $(date -u +%T)Z"
+            curl -s -o /dev/null --max-time 20 "${{ vars.POLL_URL || 'https://dune-amber-rapid-zenith.grok.me/api/ea/poll' }}" || true
+            python scripts/collector.py collect || echo "::warning::reading $n failed"
+            [ $n -lt 5 ] && sleep $(( 60 - ($(date +%s) - t0) > 0 ? 60 - ($(date +%s) - t0) : 0 ))
+          done; true
       - name: Save collector state
         if: success()
         uses: actions/cache/save@v4
