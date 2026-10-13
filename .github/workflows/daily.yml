@@ -19,8 +19,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Pick the day
@@ -30,7 +30,7 @@ jobs:
           [ -z "$d" ] && d=$(python -c "import sys;sys.path.insert(0,'scripts');import tfl_core as c,datetime as t;print(c.service_date(t.datetime.now(t.timezone.utc))-t.timedelta(days=1))")
           echo "day=$d" >> "$GITHUB_OUTPUT"
       - name: Restore timetables
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache
           key: state-${{ github.run_id }}
@@ -40,10 +40,10 @@ jobs:
           day=${{ steps.d.outputs.day }}
           mkdir -p data/raw
           gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100&name=" \
-            --jq ".artifacts[] | select(.name|startswith(\"raw-$day-\")) | select(.expired==false) | .id" > ids.txt || true
+            --jq ".artifacts[] | select(.name|startswith(\"raw-\")) | select(.expired==false) | .id" > ids.txt || true
           echo "artifacts: $(wc -l < ids.txt)"
           while read -r id; do
-            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > a.zip && unzip -oq a.zip -d data/raw && rm a.zip
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > a.zip && unzip -oq a.zip "$day/*" -d data/raw 2>/dev/null; rm -f a.zip
           done < ids.txt
           n=$(find data/raw/$day -name '*.csv.gz' 2>/dev/null | wc -l)
           echo "raw files for $day: $n"

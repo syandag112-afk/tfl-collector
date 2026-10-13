@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: "A: trigger the app's own history collection (poll)"
         env:
           POLL_URL: ${{ vars.POLL_URL || 'https://dune-amber-rapid-zenith.grok.me/api/ea/poll' }}
@@ -22,17 +22,19 @@ jobs:
           for i in 1 2 3; do
             code=$(curl -s -o /tmp/poll.json -w '%{http_code}' --max-time 60 "$POLL_URL" || echo 000)
             echo "attempt $i -> HTTP $code"
-            if [ "$code" = 200 ]; then head -c 300 /tmp/poll.json; echo; exit 0; fi
+            if [ "$code" = 200 ]; then head -c 300 /tmp/poll.json; echo
+              grep -q '"skipped":true' /tmp/poll.json && echo "::warning::app poll answered skipped:true (it recorded nothing) - see PERMANENT_FIXES Fix 9"
+              exit 0; fi
             case "$code" in 429|5??|000) sleep $((i*i*10));; *) echo "::warning::poll returned $code"; exit 0;; esac
           done
           echo "::warning::poll failed after 3 attempts"; exit 0
       - name: Restore collector state (in-flight predictions, timetables)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache
           key: state-${{ github.run_id }}
           restore-keys: state-
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: "B: TfL snapshot for all bus routes"
@@ -49,20 +51,20 @@ jobs:
           done; true
       - name: Save collector state
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .cache
           key: state-${{ github.run_id }}
-      - name: Name the raw file by service day
+      - name: List service days in this run
         id: day
         run: |
-          d=$(ls data/raw 2>/dev/null | sort | tail -1)
-          echo "day=$d" >> "$GITHUB_OUTPUT"
+          d=$(ls data/raw 2>/dev/null | sort | tr '\n' ' ')
+          echo "days=$d" >> "$GITHUB_OUTPUT"; echo "days: $d"
       - name: Store this run's stop passages (kept 3 days, rolled up nightly)
-        if: steps.day.outputs.day != ''
-        uses: actions/upload-artifact@v4
+        if: steps.day.outputs.days != ''
+        uses: actions/upload-artifact@v7
         with:
-          name: raw-${{ steps.day.outputs.day }}-${{ github.run_id }}
+          name: raw-${{ github.run_id }}   # may hold several day folders; daily.yml reads all and filters by day
           path: data/raw/
           retention-days: 3
           if-no-files-found: ignore
