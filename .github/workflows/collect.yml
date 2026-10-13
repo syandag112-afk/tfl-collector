@@ -1,7 +1,7 @@
 name: collect
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub may start runs 5-20 min late at busy times
+    - cron: '*/1 * * * *'   # GitHub may start runs 5-20 min late at busy times
   workflow_dispatch:
 concurrency:
   group: collect          # one run at a time; a queued run waits instead of colliding
