@@ -1,0 +1,72 @@
+name: daily
+on:
+  schedule:
+    - cron: "40 3 * * *"   # 04:40 BST / 03:40 GMT - after the 04:00 service-day rollover
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Service day to roll up (YYYY-MM-DD); blank = yesterday"
+        required: false
+concurrency:
+  group: daily
+permissions:
+  contents: write   # releases + keep-alive commit
+  actions: read
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pick the day
+        id: d
+        run: |
+          d="${{ github.event.inputs.date }}"
+          [ -z "$d" ] && d=$(python -c "import sys;sys.path.insert(0,'scripts');import tfl_core as c,datetime as t;print(c.service_date(t.datetime.now(t.timezone.utc))-t.timedelta(days=1))")
+          echo "day=$d" >> "$GITHUB_OUTPUT"
+      - name: Restore timetables
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+      - name: Fetch artifacts from the collect runs
+        run: |
+          day=${{ steps.d.outputs.day }}
+          mkdir -p data/raw
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100&name=" \
+            --jq ".artifacts[] | select(.name|startswith(\"raw-$day-\")) | select(.expired==false) | .id" > ids.txt || true
+          echo "artifacts: $(wc -l < ids.txt)"
+          while read -r id; do
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > a.zip && unzip -oq a.zip -d data/raw && rm a.zip
+          done < ids.txt
+          n=$(find data/raw/$day -name '*.csv.gz' 2>/dev/null | wc -l)
+          echo "raw files for $day: $n"
+          [ "$n" -gt 0 ] || { echo "::error::no raw data for $day - collection did not run"; exit 1; }
+      - name: Build CSVs (scheduled vs expected vs actual)
+        run: python scripts/collector.py rollup ${{ steps.d.outputs.day }}
+      - name: Publish as a release (kept 90 days)
+        run: |
+          day=${{ steps.d.outputs.day }}
+          (cd data/exports && zip -qr "../../tfl-bus-$day.zip" "$day")
+          ls -l "tfl-bus-$day.zip"
+          gh release delete "day-$day" -y --cleanup-tag 2>/dev/null || true
+          gh release create "day-$day" "tfl-bus-$day.zip" --title "TfL bus data $day" \
+            --notes "Per-route CSVs (gzipped) for service day $day (04:00-04:00 London)."
+      - name: Delete releases older than 90 days
+        run: |
+          cutoff=$(date -u -d '90 days ago' +%F)
+          gh release list --limit 500 --json tagName --jq '.[].tagName' | while read -r t; do
+            d=${t#day-}; [[ "$t" == day-* && "$d" < "$cutoff" ]] && gh release delete "$t" -y --cleanup-tag && echo "deleted $t"
+          done; true
+      - name: Keep-alive commit (stops GitHub disabling the schedule after 60 days)
+        run: |
+          echo "$(date -u +%FT%TZ) rolled up ${{ steps.d.outputs.day }}" > LAST_ROLLUP.txt
+          git config user.name headway-bot
+          git config user.email headway-bot@users.noreply.github.com
+          git add LAST_ROLLUP.txt && git commit -qm "rollup ${{ steps.d.outputs.day }}" && git push || true

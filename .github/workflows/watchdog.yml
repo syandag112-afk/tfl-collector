@@ -1,0 +1,20 @@
+name: watchdog
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+permissions:
+  actions: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fail (GitHub emails you) if no successful collect for over 30 minutes
+        run: |
+          last=$(gh api "repos/${{ github.repository }}/actions/workflows/collect.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].updated_at // empty')
+          [ -n "$last" ] || { echo "::error::no successful collect run yet"; exit 1; }
+          age=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 60 ))
+          echo "last successful collect: $last ($age min ago)"
+          [ "$age" -le 30 ] || { echo "::error::no data has landed for $age minutes"; exit 1; }
