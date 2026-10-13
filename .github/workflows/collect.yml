@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
-  actions: read
+  actions: write
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -68,3 +68,13 @@ jobs:
           path: data/raw/
           retention-days: 3
           if-no-files-found: ignore
+      - name: Chain the next run (closes GitHub schedule gaps)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # only chain if no other collect run is already queued or running
+          n=$(gh run list -R ${{ github.repository }} -w collect --json status --jq '[.[]|select(.status=="queued" or .status=="waiting" or .status=="pending")]|length')
+          [ "$n" = 0 ] && gh workflow run collect.yml -R ${{ github.repository }} --ref main || echo "next run already queued"
+          true
+
