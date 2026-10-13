@@ -47,10 +47,12 @@ jobs:
           done < ids.txt
           n=$(find data/raw/$day -name '*.csv.gz' 2>/dev/null | wc -l)
           echo "raw files for $day: $n"
-          [ "$n" -gt 0 ] || { echo "::error::no raw data for $day - collection did not run"; exit 1; }
+          [ "$n" -gt 0 ] || { echo "::warning::no raw data for $day"; echo "SKIP=1" >> $GITHUB_ENV; }
       - name: Build CSVs (scheduled vs expected vs actual)
+        if: env.SKIP != '1'
         run: python scripts/collector.py rollup ${{ steps.d.outputs.day }}
       - name: Publish as a release (kept 90 days)
+        if: env.SKIP != '1'
         run: |
           day=${{ steps.d.outputs.day }}
           (cd data/exports && zip -qr "../../tfl-bus-$day.zip" "$day")

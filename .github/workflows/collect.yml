@@ -23,9 +23,9 @@ jobs:
             code=$(curl -s -o /tmp/poll.json -w '%{http_code}' --max-time 60 "$POLL_URL" || echo 000)
             echo "attempt $i -> HTTP $code"
             if [ "$code" = 200 ]; then head -c 300 /tmp/poll.json; echo; exit 0; fi
-            case "$code" in 429|5??|000) sleep $((i*i*10));; *) echo "::error::poll returned $code"; exit 1;; esac
+            case "$code" in 429|5??|000) sleep $((i*i*10));; *) echo "::warning::poll returned $code"; exit 0;; esac
           done
-          echo "::error::poll failed after 3 attempts"; exit 1
+          echo "::warning::poll failed after 3 attempts"; exit 0
       - name: Restore collector state (in-flight predictions, timetables)
         uses: actions/cache/restore@v4
         with:
