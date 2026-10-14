@@ -43,7 +43,7 @@ jobs:
             --jq ".artifacts[] | select(.name|startswith(\"raw-\")) | select(.expired==false) | .id" > ids.txt || true
           echo "artifacts: $(wc -l < ids.txt)"
           while read -r id; do
-            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > a.zip && unzip -oq a.zip "$day/*" -d data/raw 2>/dev/null; rm -f a.zip
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > a.zip && unzip -oq a.zip "$day/*" -d data/raw 2>/dev/null || true; rm -f a.zip
           done < ids.txt
           n=$(find data/raw/$day -name '*.csv.gz' 2>/dev/null | wc -l)
           echo "raw files for $day: $n"
