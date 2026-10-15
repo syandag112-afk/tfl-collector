@@ -23,7 +23,14 @@ jobs:
             code=$(curl -s -o /tmp/poll.json -w '%{http_code}' --max-time 60 "$POLL_URL" || echo 000)
             echo "attempt $i -> HTTP $code"
             if [ "$code" = 200 ]; then head -c 300 /tmp/poll.json; echo
-              grep -q '"skipped":true' /tmp/poll.json && echo "::warning::app poll answered skipped:true (it recorded nothing) - see PERMANENT_FIXES Fix 9"
+              if grep -q '"skipped":true' /tmp/poll.json; then
+                reason=$(grep -o '"reason":"[^"]*"' /tmp/poll.json | head -1 | cut -d'"' -f4)
+                case "$reason" in
+                  *throttl*|*rate*limit*|*ratelimit*|*rate_limit*|*too*many*|*cooldown*)
+                    echo "info: app poll skipped (reason=$reason) - normal throttling, a cycle ran recently";;
+                  *) echo "::warning::app poll answered skipped:true (reason=${reason:-none}, it recorded nothing) - see PERMANENT_FIXES Fix 9";;
+                esac
+              fi
               exit 0; fi
             case "$code" in 429|5??|000) sleep $((i*i*10));; *) echo "::warning::poll returned $code"; exit 0;; esac
           done
@@ -55,6 +62,13 @@ jobs:
         with:
           path: .cache
           key: state-${{ github.run_id }}
+      - name: Prune old state caches (keep newest 5, never this run's)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: "5"
+          DRY_RUN: "0"
+        run: bash scripts/prune_caches.sh || echo "::warning::cache prune failed (non-fatal)"
       - name: List service days in this run
         id: day
         run: |
