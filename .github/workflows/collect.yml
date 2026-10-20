@@ -86,9 +86,6 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+        # stuck queued runs (>5 min) are cancelled and replaced; fresh queued or recent in_progress runs block duplicates
         run: |
-          # only chain if no other collect run is already queued or running
-          n=$(gh run list -R ${{ github.repository }} -w collect --json status --jq '[.[]|select(.status=="queued" or .status=="waiting" or .status=="pending")]|length')
-          [ "$n" = 0 ] && gh workflow run collect.yml -R ${{ github.repository }} --ref main || echo "next run already queued"
-          true
-
+          bash scripts/chain_next.sh || gh workflow run collect.yml -R ${{ github.repository }} --ref main || true
