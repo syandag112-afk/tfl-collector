@@ -34,7 +34,11 @@ while read -r id status created started; do
       fi;;
     in_progress)
       age=$(( (NOW - $(date -u -d "$started" +%s)) / 60 ))
-      if [ "$age" -lt "$BUSY_MIN" ]; then busy=$((busy+1)); echo "run $id in_progress for ${age} min -> it will chain itself"
+      if [ "$SELF" != "0" ] && [ "$id" -lt "$SELF" ]; then
+        # An OLDER in_progress run has usually already chained (often it dispatched this run) and may run on for
+        # minutes afterwards; counting it as busy broke the chain on 21 Oct (11:40-12:08, 14:21-14:42 UTC gaps).
+        echo "run $id in_progress for ${age} min -> older than this run, assumed already chained"
+      elif [ "$age" -lt "$BUSY_MIN" ]; then busy=$((busy+1)); echo "run $id in_progress for ${age} min -> it will chain itself"
       else echo "run $id in_progress for ${age} min -> past timeout, ignored"; fi;;
   esac
 done <<< "$runs"
